@@ -10,6 +10,18 @@ export interface Slot {
   endsAt: Date;
 }
 
+export interface BookResult {
+  ok: boolean;
+  reason?: 'slot_taken';
+  appointmentId?: string;
+  startsAt?: Date;
+}
+
+export interface CancelResult {
+  ok: boolean;
+  reason?: 'not_found';
+}
+
 @Injectable()
 export class SchedulingService {
   constructor(
@@ -91,5 +103,86 @@ export class SchedulingService {
       if (!isBlocked) slots.push({ startsAt, endsAt });
     }
     return slots;
+  }
+
+  async bookAppointment(
+    clinic: Clinic,
+    input: { phone: string; patientName: string; treatment: string; startsAt: Date },
+  ): Promise<BookResult> {
+    const endsAt = new Date(input.startsAt.getTime() + clinic.slotMinutes * 60_000);
+
+    const taken = await this.prisma.appointment.findFirst({
+      where: {
+        clinicId: clinic.id,
+        status: { in: ['pending', 'confirmed'] },
+        startsAt: input.startsAt,
+      },
+    });
+    if (taken) return { ok: false, reason: 'slot_taken' };
+
+    const patient = await this.prisma.patient.upsert({
+      where: { clinicId_phone: { clinicId: clinic.id, phone: input.phone } },
+      update: { name: input.patientName },
+      create: { clinicId: clinic.id, phone: input.phone, name: input.patientName },
+    });
+
+    const appointment = await this.prisma.appointment.create({
+      data: {
+        clinicId: clinic.id,
+        patientId: patient.id,
+        treatment: input.treatment,
+        startsAt: input.startsAt,
+        endsAt,
+        status: 'pending',
+      },
+    });
+
+    try {
+      const eventId = await this.calendar.createEvent(clinic.googleCalendarId, {
+        summary: `Cita: ${input.patientName}`,
+        description: `${input.treatment} — WhatsApp: ${input.phone}`,
+        start: input.startsAt,
+        end: endsAt,
+        timezone: clinic.timezone,
+      });
+      await this.prisma.appointment.update({
+        where: { id: appointment.id },
+        data: { googleEventId: eventId },
+      });
+    } catch (err) {
+      console.error('Calendar mirror failed (cita igual creada):', err);
+    }
+
+    return { ok: true, appointmentId: appointment.id, startsAt: input.startsAt };
+  }
+
+  async cancelAppointment(
+    clinic: Clinic,
+    input: { phone: string; startsAt?: Date },
+  ): Promise<CancelResult> {
+    const appointment = await this.prisma.appointment.findFirst({
+      where: {
+        clinicId: clinic.id,
+        status: { in: ['pending', 'confirmed'] },
+        patient: { phone: input.phone },
+        ...(input.startsAt ? { startsAt: input.startsAt } : {}),
+      },
+      orderBy: { startsAt: 'asc' },
+    });
+    if (!appointment) return { ok: false, reason: 'not_found' };
+
+    await this.prisma.appointment.update({
+      where: { id: appointment.id },
+      data: { status: 'cancelled' },
+    });
+
+    if (appointment.googleEventId) {
+      try {
+        await this.calendar.deleteEvent(clinic.googleCalendarId, appointment.googleEventId);
+      } catch (err) {
+        console.error('Calendar delete failed:', err);
+      }
+    }
+    return { ok: true };
   }
 }
