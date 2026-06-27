@@ -1,0 +1,64 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum AppointmentStatus {
+  pending
+  confirmed
+  cancelled
+  no_show
+}
+
+model Clinic {
+  id              String        @id @default(uuid())
+  name            String
+  timezone        String        @default("America/Mexico_City")
+  workingHours    Json          @map("working_hours")
+  slotMinutes     Int           @map("slot_minutes")
+  address         String        @default("")
+  pricesJson      Json          @default("{}") @map("prices_json")
+  waPhoneNumberId String        @unique @map("wa_phone_number_id")
+  waAccessToken   String        @map("wa_access_token")
+  googleCalendarId String       @map("google_calendar_id")
+  createdAt       DateTime      @default(now()) @map("created_at")
+  patients        Patient[]
+  appointments    Appointment[]
+
+  @@map("clinics")
+}
+
+model Patient {
+  id           String        @id @default(uuid())
+  clinicId     String        @map("clinic_id")
+  clinic       Clinic        @relation(fields: [clinicId], references: [id])
+  phone        String
+  name         String
+  createdAt    DateTime      @default(now()) @map("created_at")
+  appointments Appointment[]
+
+  @@unique([clinicId, phone])
+  @@map("patients")
+}
+
+model Appointment {
+  id             String            @id @default(uuid())
+  clinicId       String            @map("clinic_id")
+  clinic         Clinic            @relation(fields: [clinicId], references: [id])
+  patientId      String            @map("patient_id")
+  patient        Patient           @relation(fields: [patientId], references: [id])
+  treatment      String
+  startsAt       DateTime          @map("starts_at")
+  endsAt         DateTime          @map("ends_at")
+  status         AppointmentStatus @default(pending)
+  googleEventId  String?           @map("google_event_id")
+  reminderSentAt DateTime?         @map("reminder_sent_at")
+  createdAt      DateTime          @default(now()) @map("created_at")
+
+  @@index([clinicId, startsAt])
+  @@map("appointments")
+}
