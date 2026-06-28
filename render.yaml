@@ -3,7 +3,9 @@ services:
     name: whatsapp-bot-dental
     env: node
     plan: free
-    buildCommand: npm ci && npm run build
+    # NOTE: npx prisma migrate deploy must run as a release/predeploy step before start.
+    # Add it to your Render "Pre-Deploy Command" field or run it manually after first deploy.
+    buildCommand: npm ci && npx prisma generate && npm run build
     startCommand: npm run start:prod
     envVars:
       - key: WHATSAPP_VERIFY_TOKEN
@@ -17,4 +19,14 @@ services:
       - key: WHATSAPP_APP_SECRET
         sync: false
       - key: TEST_MODE
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: ANTHROPIC_MODEL
+        sync: false
+      - key: GOOGLE_SERVICE_ACCOUNT
+        sync: false
+      - key: REMINDERS_TOKEN
         sync: false
