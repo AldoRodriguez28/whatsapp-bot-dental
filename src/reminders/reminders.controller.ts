@@ -1,5 +1,10 @@
 // src/reminders/reminders.controller.ts
-import { Controller, Post, Headers, UnauthorizedException } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Headers,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { RemindersService } from './reminders.service';
 
 @Controller('reminders')

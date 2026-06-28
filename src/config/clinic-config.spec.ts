@@ -11,6 +11,8 @@ describe('parseWorkingHours', () => {
   });
 
   it('rechaza horas mal formadas', () => {
-    expect(() => parseWorkingHours({ '1': { open: '9am', close: '19:00' } })).toThrow();
+    expect(() =>
+      parseWorkingHours({ '1': { open: '9am', close: '19:00' } }),
+    ).toThrow();
   });
 });

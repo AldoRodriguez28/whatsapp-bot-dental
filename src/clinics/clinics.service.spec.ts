@@ -6,7 +6,9 @@ describe('ClinicsService', () => {
 
   it('extractPhoneNumberId lee metadata del payload', () => {
     const body = {
-      entry: [{ changes: [{ value: { metadata: { phone_number_id: '123' } } }] }],
+      entry: [
+        { changes: [{ value: { metadata: { phone_number_id: '123' } } }] },
+      ],
     };
     expect(service.extractPhoneNumberId(body)).toBe('123');
   });

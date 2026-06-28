@@ -7,7 +7,8 @@ export class ClinicsService {
   constructor(private readonly prisma: PrismaService) {}
 
   extractPhoneNumberId(webhookBody: any): string | undefined {
-    return webhookBody?.entry?.[0]?.changes?.[0]?.value?.metadata?.phone_number_id;
+    return webhookBody?.entry?.[0]?.changes?.[0]?.value?.metadata
+      ?.phone_number_id;
   }
 
   findByPhoneNumberId(phoneNumberId: string): Promise<Clinic | null> {

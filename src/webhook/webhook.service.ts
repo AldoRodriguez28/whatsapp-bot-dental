@@ -18,7 +18,10 @@ export class WebhookService {
     const [algo, hash] = signature256.split('=');
     if (algo !== 'sha256' || !hash) throw new Error('Invalid signature format');
     const payload = req.rawBody ?? Buffer.from(JSON.stringify(req.body ?? {}));
-    const expected = crypto.createHmac('sha256', appSecret).update(payload).digest('hex');
+    const expected = crypto
+      .createHmac('sha256', appSecret)
+      .update(payload)
+      .digest('hex');
     const expectedBuf = Buffer.from(expected, 'hex');
     const receivedBuf = Buffer.from(hash, 'hex');
     if (

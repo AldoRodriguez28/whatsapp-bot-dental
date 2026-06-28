@@ -4,7 +4,11 @@ import { AgentContext } from './tools';
 import { Clinic } from '@prisma/client';
 
 const ctx: AgentContext = {
-  clinic: { id: 'c1', name: 'Dental X', timezone: 'America/Mexico_City' } as unknown as Clinic,
+  clinic: {
+    id: 'c1',
+    name: 'Dental X',
+    timezone: 'America/Mexico_City',
+  } as unknown as Clinic,
   phone: '521',
 };
 
@@ -33,7 +37,12 @@ describe('LlmService', () => {
       .mockResolvedValueOnce({
         stop_reason: 'tool_use',
         content: [
-          { type: 'tool_use', id: 't1', name: 'get_availability', input: { date: '2026-06-29' } },
+          {
+            type: 'tool_use',
+            id: 't1',
+            name: 'get_availability',
+            input: { date: '2026-06-29' },
+          },
         ],
       })
       .mockResolvedValueOnce({

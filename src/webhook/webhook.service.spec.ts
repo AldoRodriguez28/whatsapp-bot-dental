@@ -2,21 +2,26 @@ import { WebhookService } from './webhook.service';
 
 function payload(phoneNumberId: string, text: string) {
   return {
-    entry: [{
-      changes: [{
-        value: {
-          metadata: { phone_number_id: phoneNumberId },
-          messages: [{ from: '521', type: 'text', text: { body: text } }],
-        },
-      }],
-    }],
+    entry: [
+      {
+        changes: [
+          {
+            value: {
+              metadata: { phone_number_id: phoneNumberId },
+              messages: [{ from: '521', type: 'text', text: { body: text } }],
+            },
+          },
+        ],
+      },
+    ],
   };
 }
 
 describe('WebhookService.handleWebhookEvent', () => {
   function make(clinic: any) {
     const clinics = {
-      extractPhoneNumberId: (b: any) => b?.entry?.[0]?.changes?.[0]?.value?.metadata?.phone_number_id,
+      extractPhoneNumberId: (b: any) =>
+        b?.entry?.[0]?.changes?.[0]?.value?.metadata?.phone_number_id,
       findByPhoneNumberId: jest.fn().mockResolvedValue(clinic),
     } as any;
     const router = { handle: jest.fn() } as any;

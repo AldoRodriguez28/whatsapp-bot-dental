@@ -13,7 +13,9 @@ export class LlmService {
 
   private systemPrompt(ctx: AgentContext, recentName?: string): string {
     const now = new Intl.DateTimeFormat('es-MX', {
-      timeZone: ctx.clinic.timezone, dateStyle: 'full', timeStyle: 'short',
+      timeZone: ctx.clinic.timezone,
+      dateStyle: 'full',
+      timeStyle: 'short',
     }).format(new Date());
     return [
       `Eres el asistente de WhatsApp de ${ctx.clinic.name}, una clínica dental.`,
@@ -22,11 +24,19 @@ export class LlmService {
       'Reglas: nunca inventes horarios; usa get_availability antes de ofrecer huecos.',
       'Antes de agendar confirma tratamiento, nombre y horario. Usa las herramientas para todo.',
       'Si el paciente pide precios/dirección/horarios usa get_clinic_info.',
-    ].filter(Boolean).join(' ');
+    ]
+      .filter(Boolean)
+      .join(' ');
   }
 
-  async reply(ctx: AgentContext, userMessage: string, recentName?: string): Promise<string> {
-    const messages: Anthropic.MessageParam[] = [{ role: 'user', content: userMessage }];
+  async reply(
+    ctx: AgentContext,
+    userMessage: string,
+    recentName?: string,
+  ): Promise<string> {
+    const messages: Anthropic.MessageParam[] = [
+      { role: 'user', content: userMessage },
+    ];
 
     for (let i = 0; i < 5; i++) {
       const res = await this.client.messages.create({
@@ -42,8 +52,17 @@ export class LlmService {
         const toolResults: Anthropic.ToolResultBlockParam[] = [];
         for (const block of res.content) {
           if (block.type === 'tool_use') {
-            const result = await executeTool(block.name, block.input, ctx, this.scheduling);
-            toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: result });
+            const result = await executeTool(
+              block.name,
+              block.input,
+              ctx,
+              this.scheduling,
+            );
+            toolResults.push({
+              type: 'tool_result',
+              tool_use_id: block.id,
+              content: result,
+            });
           }
         }
         messages.push({ role: 'user', content: toolResults });

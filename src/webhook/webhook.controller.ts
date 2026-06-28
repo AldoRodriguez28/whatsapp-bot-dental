@@ -6,7 +6,7 @@ import {
   Res,
   Headers,
   HttpStatus,
- } from '@nestjs/common';
+} from '@nestjs/common';
 
 import type { Request, Response } from 'express';
 import { WebhookService } from './webhook.service';

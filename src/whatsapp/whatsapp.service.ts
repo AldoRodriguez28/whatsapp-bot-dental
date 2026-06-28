@@ -14,7 +14,10 @@ export class WhatsappService {
 
   private async post(creds: WaCredentials, body: any) {
     if (this.testMode) {
-      console.log('[TEST_MODE] WhatsApp suppressed', { to: body.to, type: body.type });
+      console.log('[TEST_MODE] WhatsApp suppressed', {
+        to: body.to,
+        type: body.type,
+      });
       return { ok: true, testMode: true };
     }
     const url = `https://graph.facebook.com/v22.0/${creds.phoneNumberId}/messages`;
@@ -35,7 +38,12 @@ export class WhatsappService {
   }
 
   sendText(creds: WaCredentials, to: string, body: string) {
-    return this.post(creds, { messaging_product: 'whatsapp', to, type: 'text', text: { body } });
+    return this.post(creds, {
+      messaging_product: 'whatsapp',
+      to,
+      type: 'text',
+      text: { body },
+    });
   }
 
   sendButtons(
@@ -52,7 +60,10 @@ export class WhatsappService {
         type: 'button',
         body: { text: body },
         action: {
-          buttons: buttons.map((b) => ({ type: 'reply', reply: { id: b.id, title: b.title } })),
+          buttons: buttons.map((b) => ({
+            type: 'reply',
+            reply: { id: b.id, title: b.title },
+          })),
         },
       },
     });

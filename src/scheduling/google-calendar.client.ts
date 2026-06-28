@@ -23,7 +23,11 @@ export class GoogleCalendarClient {
     }
   }
 
-  async getBusy(calendarId: string, timeMin: Date, timeMax: Date): Promise<BusyInterval[]> {
+  async getBusy(
+    calendarId: string,
+    timeMin: Date,
+    timeMax: Date,
+  ): Promise<BusyInterval[]> {
     const res = await this.calendar.freebusy.query({
       requestBody: {
         timeMin: timeMin.toISOString(),
@@ -32,19 +36,31 @@ export class GoogleCalendarClient {
       },
     });
     const busy = res.data.calendars?.[calendarId]?.busy ?? [];
-    return busy.map((b) => ({ start: new Date(b.start!), end: new Date(b.end!) }));
+    return busy.map((b) => ({
+      start: new Date(b.start!),
+      end: new Date(b.end!),
+    }));
   }
 
   async createEvent(
     calendarId: string,
-    input: { summary: string; description: string; start: Date; end: Date; timezone: string },
+    input: {
+      summary: string;
+      description: string;
+      start: Date;
+      end: Date;
+      timezone: string;
+    },
   ): Promise<string> {
     const res = await this.calendar.events.insert({
       calendarId,
       requestBody: {
         summary: input.summary,
         description: input.description,
-        start: { dateTime: input.start.toISOString(), timeZone: input.timezone },
+        start: {
+          dateTime: input.start.toISOString(),
+          timeZone: input.timezone,
+        },
         end: { dateTime: input.end.toISOString(), timeZone: input.timezone },
       },
     });
