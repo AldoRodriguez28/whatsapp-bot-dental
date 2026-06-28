@@ -1,6 +1,6 @@
 // src/scheduling/scheduling.service.ts
 import { Injectable } from '@nestjs/common';
-import { Clinic } from '@prisma/client';
+import { Clinic, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { GoogleCalendarClient, BusyInterval } from './google-calendar.client';
 import { parseWorkingHours, Weekday } from '../config/clinic-config';
@@ -18,6 +18,11 @@ export interface BookResult {
 }
 
 export interface CancelResult {
+  ok: boolean;
+  reason?: 'not_found';
+}
+
+export interface ConfirmResult {
   ok: boolean;
   reason?: 'not_found';
 }
@@ -44,26 +49,51 @@ export class SchedulingService {
     const dtf = new Intl.DateTimeFormat('en-US', {
       timeZone: timezone,
       hour12: false,
-      year: 'numeric', month: '2-digit', day: '2-digit',
-      hour: '2-digit', minute: '2-digit', second: '2-digit',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
     });
-    const parts = Object.fromEntries(dtf.formatToParts(at).map((p) => [p.type, p.value]));
+    const parts = Object.fromEntries(
+      dtf.formatToParts(at).map((p) => [p.type, p.value]),
+    );
     const asUtc = Date.UTC(
-      Number(parts.year), Number(parts.month) - 1, Number(parts.day),
-      Number(parts.hour), Number(parts.minute), Number(parts.second),
+      Number(parts.year),
+      Number(parts.month) - 1,
+      Number(parts.day),
+      Number(parts.hour),
+      Number(parts.minute),
+      Number(parts.second),
     );
     return asUtc - at.getTime();
   }
 
   private weekdayInTz(date: string, timezone: string): Weekday {
     const noonUtc = this.localTimeToUtc(date, '12:00', timezone);
-    const wd = new Intl.DateTimeFormat('en-US', { timeZone: timezone, weekday: 'short' })
-      .format(noonUtc);
-    const map: Record<string, Weekday> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+    const wd = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      weekday: 'short',
+    }).format(noonUtc);
+    const map: Record<string, Weekday> = {
+      Sun: 0,
+      Mon: 1,
+      Tue: 2,
+      Wed: 3,
+      Thu: 4,
+      Fri: 5,
+      Sat: 6,
+    };
     return map[wd];
   }
 
-  private overlaps(aStart: Date, aEnd: Date, bStart: Date, bEnd: Date): boolean {
+  private overlaps(
+    aStart: Date,
+    aEnd: Date,
+    bStart: Date,
+    bEnd: Date,
+  ): boolean {
     return aStart < bEnd && bStart < aEnd;
   }
 
@@ -96,10 +126,16 @@ export class SchedulingService {
 
     const slots: Slot[] = [];
     const stepMs = clinic.slotMinutes * 60_000;
-    for (let t = dayStart.getTime(); t + stepMs <= dayEnd.getTime(); t += stepMs) {
+    for (
+      let t = dayStart.getTime();
+      t + stepMs <= dayEnd.getTime();
+      t += stepMs
+    ) {
       const startsAt = new Date(t);
       const endsAt = new Date(t + stepMs);
-      const isBlocked = blocked.some((b) => this.overlaps(startsAt, endsAt, b.start, b.end));
+      const isBlocked = blocked.some((b) =>
+        this.overlaps(startsAt, endsAt, b.start, b.end),
+      );
       if (!isBlocked) slots.push({ startsAt, endsAt });
     }
     return slots;
@@ -107,15 +143,23 @@ export class SchedulingService {
 
   async bookAppointment(
     clinic: Clinic,
-    input: { phone: string; patientName: string; treatment: string; startsAt: Date },
+    input: {
+      phone: string;
+      patientName: string;
+      treatment: string;
+      startsAt: Date;
+    },
   ): Promise<BookResult> {
-    const endsAt = new Date(input.startsAt.getTime() + clinic.slotMinutes * 60_000);
+    const endsAt = new Date(
+      input.startsAt.getTime() + clinic.slotMinutes * 60_000,
+    );
 
     const taken = await this.prisma.appointment.findFirst({
       where: {
         clinicId: clinic.id,
         status: { in: ['pending', 'confirmed'] },
-        startsAt: input.startsAt,
+        startsAt: { lt: endsAt },
+        endsAt: { gt: input.startsAt },
       },
     });
     if (taken) return { ok: false, reason: 'slot_taken' };
@@ -123,19 +167,34 @@ export class SchedulingService {
     const patient = await this.prisma.patient.upsert({
       where: { clinicId_phone: { clinicId: clinic.id, phone: input.phone } },
       update: { name: input.patientName },
-      create: { clinicId: clinic.id, phone: input.phone, name: input.patientName },
-    });
-
-    const appointment = await this.prisma.appointment.create({
-      data: {
+      create: {
         clinicId: clinic.id,
-        patientId: patient.id,
-        treatment: input.treatment,
-        startsAt: input.startsAt,
-        endsAt,
-        status: 'pending',
+        phone: input.phone,
+        name: input.patientName,
       },
     });
+
+    let appointment: { id: string; googleEventId?: string | null };
+    try {
+      appointment = await this.prisma.appointment.create({
+        data: {
+          clinicId: clinic.id,
+          patientId: patient.id,
+          treatment: input.treatment,
+          startsAt: input.startsAt,
+          endsAt,
+          status: 'pending',
+        },
+      });
+    } catch (err: any) {
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === 'P2002'
+      ) {
+        return { ok: false, reason: 'slot_taken' };
+      }
+      throw err;
+    }
 
     try {
       const eventId = await this.calendar.createEvent(clinic.googleCalendarId, {
@@ -153,18 +212,23 @@ export class SchedulingService {
       console.error('Calendar mirror failed (cita igual creada):', err);
     }
 
-    return { ok: true, appointmentId: appointment.id, startsAt: input.startsAt };
+    return {
+      ok: true,
+      appointmentId: appointment.id,
+      startsAt: input.startsAt,
+    };
   }
 
   async cancelAppointment(
     clinic: Clinic,
-    input: { phone: string; startsAt?: Date },
+    input: { phone: string; startsAt?: Date; appointmentId?: string },
   ): Promise<CancelResult> {
     const appointment = await this.prisma.appointment.findFirst({
       where: {
         clinicId: clinic.id,
         status: { in: ['pending', 'confirmed'] },
         patient: { phone: input.phone },
+        ...(input.appointmentId ? { id: input.appointmentId } : {}),
         ...(input.startsAt ? { startsAt: input.startsAt } : {}),
       },
       orderBy: { startsAt: 'asc' },
@@ -178,11 +242,34 @@ export class SchedulingService {
 
     if (appointment.googleEventId) {
       try {
-        await this.calendar.deleteEvent(clinic.googleCalendarId, appointment.googleEventId);
+        await this.calendar.deleteEvent(
+          clinic.googleCalendarId,
+          appointment.googleEventId,
+        );
       } catch (err) {
         console.error('Calendar delete failed:', err);
       }
     }
+    return { ok: true };
+  }
+
+  async confirmAppointment(
+    clinic: Clinic,
+    appointmentId: string,
+  ): Promise<ConfirmResult> {
+    const appointment = await this.prisma.appointment.findFirst({
+      where: {
+        id: appointmentId,
+        clinicId: clinic.id,
+        status: { in: ['pending', 'confirmed'] },
+      },
+    });
+    if (!appointment) return { ok: false, reason: 'not_found' };
+
+    await this.prisma.appointment.update({
+      where: { id: appointment.id },
+      data: { status: 'confirmed' },
+    });
     return { ok: true };
   }
 }

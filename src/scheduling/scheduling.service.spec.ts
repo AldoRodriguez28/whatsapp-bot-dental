@@ -33,7 +33,9 @@ describe('SchedulingService.getAvailability', () => {
     const service = makeService([], [{ startsAt: start, endsAt: end }]);
     const slots = await service.getAvailability(clinic, '2026-06-29');
     expect(slots).toHaveLength(3);
-    expect(slots.some((s) => s.startsAt.getTime() === start.getTime())).toBe(false);
+    expect(slots.some((s) => s.startsAt.getTime() === start.getTime())).toBe(
+      false,
+    );
   });
 
   it('excluye un slot ocupado por busy del Calendar', async () => {
@@ -52,11 +54,14 @@ describe('SchedulingService.getAvailability', () => {
 });
 
 describe('SchedulingService.bookAppointment', () => {
-  function makeService(existing: any) {
+  function makeService(existing: any, createImpl?: () => Promise<any>) {
+    const createFn = createImpl
+      ? jest.fn().mockImplementation(createImpl)
+      : jest.fn().mockResolvedValue({ id: 'appt1' });
     const prisma = {
       appointment: {
         findFirst: jest.fn().mockResolvedValue(existing),
-        create: jest.fn().mockResolvedValue({ id: 'appt1' }),
+        create: createFn,
         update: jest.fn().mockResolvedValue({}),
       },
       patient: { upsert: jest.fn().mockResolvedValue({ id: 'p1' }) },
@@ -65,13 +70,19 @@ describe('SchedulingService.bookAppointment', () => {
       createEvent: jest.fn().mockResolvedValue('evt1'),
       deleteEvent: jest.fn(),
     } as any;
-    return { service: new SchedulingService(prisma, calendar), prisma, calendar };
+    return {
+      service: new SchedulingService(prisma, calendar),
+      prisma,
+      calendar,
+    };
   }
 
   it('rechaza si el slot ya está tomado', async () => {
     const { service } = makeService({ id: 'taken' });
     const res = await service.bookAppointment(clinic, {
-      phone: '521', patientName: 'Ana', treatment: 'limpieza',
+      phone: '521',
+      patientName: 'Ana',
+      treatment: 'limpieza',
       startsAt: new Date('2026-06-29T15:00:00Z'),
     });
     expect(res.ok).toBe(false);
@@ -81,7 +92,9 @@ describe('SchedulingService.bookAppointment', () => {
   it('crea paciente, cita y evento de Calendar cuando está libre', async () => {
     const { service, prisma, calendar } = makeService(null);
     const res = await service.bookAppointment(clinic, {
-      phone: '521', patientName: 'Ana', treatment: 'limpieza',
+      phone: '521',
+      patientName: 'Ana',
+      treatment: 'limpieza',
       startsAt: new Date('2026-06-29T15:00:00Z'),
     });
     expect(res.ok).toBe(true);
@@ -97,17 +110,43 @@ describe('SchedulingService.bookAppointment', () => {
     const { service, calendar, prisma } = makeService(null);
     calendar.createEvent.mockRejectedValue(new Error('google down'));
     const res = await service.bookAppointment(clinic, {
-      phone: '521', patientName: 'Ana', treatment: 'limpieza',
+      phone: '521',
+      patientName: 'Ana',
+      treatment: 'limpieza',
       startsAt: new Date('2026-06-29T15:00:00Z'),
     });
     expect(res.ok).toBe(true);
     expect(prisma.appointment.create).toHaveBeenCalled();
   });
+
+  it('retorna slot_taken cuando appointment.create lanza P2002', async () => {
+    const p2002 = Object.assign(new Error('Unique constraint'), {
+      code: 'P2002',
+      name: 'PrismaClientKnownRequestError',
+    });
+    // Make it an actual PrismaClientKnownRequestError instance
+    const { Prisma } = jest.requireActual('@prisma/client') as any;
+    const err = new Prisma.PrismaClientKnownRequestError('Unique constraint', {
+      code: 'P2002',
+      clientVersion: '5.0.0',
+    });
+    const { service } = makeService(null, () => Promise.reject(err));
+    const res = await service.bookAppointment(clinic, {
+      phone: '521',
+      patientName: 'Ana',
+      treatment: 'limpieza',
+      startsAt: new Date('2026-06-29T15:00:00Z'),
+    });
+    expect(res.ok).toBe(false);
+    expect(res.reason).toBe('slot_taken');
+  });
 });
 
 describe('SchedulingService.cancelAppointment', () => {
   it('regresa not_found si no hay cita', async () => {
-    const prisma = { appointment: { findFirst: jest.fn().mockResolvedValue(null) } } as any;
+    const prisma = {
+      appointment: { findFirst: jest.fn().mockResolvedValue(null) },
+    } as any;
     const service = new SchedulingService(prisma, {} as any);
     const res = await service.cancelAppointment(clinic, { phone: '521' });
     expect(res).toEqual({ ok: false, reason: 'not_found' });
@@ -116,11 +155,15 @@ describe('SchedulingService.cancelAppointment', () => {
   it('marca cancelada y borra el evento', async () => {
     const prisma = {
       appointment: {
-        findFirst: jest.fn().mockResolvedValue({ id: 'a1', googleEventId: 'evt1' }),
+        findFirst: jest
+          .fn()
+          .mockResolvedValue({ id: 'a1', googleEventId: 'evt1' }),
         update: jest.fn().mockResolvedValue({}),
       },
     } as any;
-    const calendar = { deleteEvent: jest.fn().mockResolvedValue(undefined) } as any;
+    const calendar = {
+      deleteEvent: jest.fn().mockResolvedValue(undefined),
+    } as any;
     const service = new SchedulingService(prisma, calendar);
     const res = await service.cancelAppointment(clinic, { phone: '521' });
     expect(res.ok).toBe(true);
@@ -128,5 +171,54 @@ describe('SchedulingService.cancelAppointment', () => {
       expect.objectContaining({ data: { status: 'cancelled' } }),
     );
     expect(calendar.deleteEvent).toHaveBeenCalledWith('cal1', 'evt1');
+  });
+
+  it('cancela por appointmentId cuando se proporciona', async () => {
+    const prisma = {
+      appointment: {
+        findFirst: jest
+          .fn()
+          .mockResolvedValue({ id: 'a2', googleEventId: null }),
+        update: jest.fn().mockResolvedValue({}),
+      },
+    } as any;
+    const service = new SchedulingService(prisma, {} as any);
+    const res = await service.cancelAppointment(clinic, {
+      phone: '521',
+      appointmentId: 'a2',
+    });
+    expect(res.ok).toBe(true);
+    // La query debe incluir el id del appointment
+    expect(prisma.appointment.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ id: 'a2' }),
+      }),
+    );
+  });
+});
+
+describe('SchedulingService.confirmAppointment', () => {
+  it('retorna not_found si no existe la cita', async () => {
+    const prisma = {
+      appointment: { findFirst: jest.fn().mockResolvedValue(null) },
+    } as any;
+    const service = new SchedulingService(prisma, {} as any);
+    const res = await service.confirmAppointment(clinic, 'missing-id');
+    expect(res).toEqual({ ok: false, reason: 'not_found' });
+  });
+
+  it('marca la cita como confirmed y retorna ok', async () => {
+    const prisma = {
+      appointment: {
+        findFirst: jest.fn().mockResolvedValue({ id: 'a1' }),
+        update: jest.fn().mockResolvedValue({}),
+      },
+    } as any;
+    const service = new SchedulingService(prisma, {} as any);
+    const res = await service.confirmAppointment(clinic, 'a1');
+    expect(res.ok).toBe(true);
+    expect(prisma.appointment.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { status: 'confirmed' } }),
+    );
   });
 });

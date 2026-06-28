@@ -14,7 +14,10 @@ export class RemindersService {
   // Inicio y fin del día (en la tz de la clínica) que contiene `now`, en UTC.
   private dayBounds(now: Date, timezone: string): { start: Date; end: Date } {
     const ymd = new Intl.DateTimeFormat('en-CA', {
-      timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit',
+      timeZone: timezone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
     }).format(now); // "YYYY-MM-DD"
     const [y, m, d] = ymd.split('-').map(Number);
     const guessStart = new Date(Date.UTC(y, m - 1, d, 0, 0, 0));
@@ -26,21 +29,35 @@ export class RemindersService {
 
   private tzOffsetMs(at: Date, timezone: string): number {
     const dtf = new Intl.DateTimeFormat('en-US', {
-      timeZone: timezone, hour12: false,
-      year: 'numeric', month: '2-digit', day: '2-digit',
-      hour: '2-digit', minute: '2-digit', second: '2-digit',
+      timeZone: timezone,
+      hour12: false,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
     });
-    const p = Object.fromEntries(dtf.formatToParts(at).map((x) => [x.type, x.value]));
+    const p = Object.fromEntries(
+      dtf.formatToParts(at).map((x) => [x.type, x.value]),
+    );
     const asUtc = Date.UTC(
-      Number(p.year), Number(p.month) - 1, Number(p.day),
-      Number(p.hour), Number(p.minute), Number(p.second),
+      Number(p.year),
+      Number(p.month) - 1,
+      Number(p.day),
+      Number(p.hour),
+      Number(p.minute),
+      Number(p.second),
     );
     return asUtc - at.getTime();
   }
 
   private fmtTime(d: Date, timezone: string): string {
     return new Intl.DateTimeFormat('es-MX', {
-      timeZone: timezone, hour: '2-digit', minute: '2-digit', hour12: false,
+      timeZone: timezone,
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
     }).format(d);
   }
 
@@ -48,7 +65,7 @@ export class RemindersService {
     const clinics = await this.prisma.clinic.findMany();
     let sent = 0;
 
-    for (const clinic of clinics as Clinic[]) {
+    for (const clinic of clinics) {
       const { start, end } = this.dayBounds(now, clinic.timezone);
       const appointments = await this.prisma.appointment.findMany({
         where: {
@@ -61,22 +78,34 @@ export class RemindersService {
       });
 
       for (const appt of appointments as any[]) {
-        await this.whatsapp.sendButtons(
-          { phoneNumberId: clinic.waPhoneNumberId, accessToken: clinic.waAccessToken },
-          appt.patient.phone,
-          `Hola ${appt.patient.name} 👋 Te recordamos tu cita de hoy a las ${this.fmtTime(
-            appt.startsAt, clinic.timezone,
-          )} (${appt.treatment}). ¿La confirmas?`,
-          [
-            { id: `confirm_${appt.id}`, title: 'Confirmar' },
-            { id: `cancel_${appt.id}`, title: 'Cancelar' },
-          ],
-        );
-        await this.prisma.appointment.update({
-          where: { id: appt.id },
-          data: { reminderSentAt: new Date() },
-        });
-        sent++;
+        try {
+          await this.whatsapp.sendButtons(
+            {
+              phoneNumberId: clinic.waPhoneNumberId,
+              accessToken: clinic.waAccessToken,
+            },
+            appt.patient.phone,
+            `Hola ${appt.patient.name} 👋 Te recordamos tu cita de hoy a las ${this.fmtTime(
+              appt.startsAt,
+              clinic.timezone,
+            )} (${appt.treatment}). ¿La confirmas?`,
+            [
+              { id: `confirm_${appt.id}`, title: 'Confirmar' },
+              { id: `cancel_${appt.id}`, title: 'Cancelar' },
+            ],
+          );
+          await this.prisma.appointment.update({
+            where: { id: appt.id },
+            data: { reminderSentAt: new Date() },
+          });
+          sent++;
+        } catch (err) {
+          console.error(
+            `Reminder failed for appointment ${appt.id}:`,
+            err,
+          );
+          // Do NOT increment sent; reminderSentAt stays null so it retries next run
+        }
       }
     }
     return { sent };

@@ -11,7 +11,8 @@ export interface AgentContext {
 export const toolDefinitions = [
   {
     name: 'get_availability',
-    description: 'Consulta los horarios libres de la clínica para una fecha (YYYY-MM-DD).',
+    description:
+      'Consulta los horarios libres de la clínica para una fecha (YYYY-MM-DD).',
     input_schema: {
       type: 'object',
       properties: {
@@ -23,13 +24,17 @@ export const toolDefinitions = [
   },
   {
     name: 'book_appointment',
-    description: 'Agenda una cita. dateTime en ISO 8601 UTC, debe ser un horario libre.',
+    description:
+      'Agenda una cita. dateTime en ISO 8601 UTC, debe ser un horario libre.',
     input_schema: {
       type: 'object',
       properties: {
         patientName: { type: 'string' },
         treatment: { type: 'string' },
-        dateTime: { type: 'string', description: 'ISO 8601, ej 2026-06-29T15:00:00Z' },
+        dateTime: {
+          type: 'string',
+          description: 'ISO 8601, ej 2026-06-29T15:00:00Z',
+        },
       },
       required: ['patientName', 'treatment', 'dateTime'],
     },
@@ -47,24 +52,34 @@ export const toolDefinitions = [
     description: 'Información de la clínica: precios, direccion u horarios.',
     input_schema: {
       type: 'object',
-      properties: { topic: { type: 'string', enum: ['precios', 'direccion', 'horarios'] } },
+      properties: {
+        topic: { type: 'string', enum: ['precios', 'direccion', 'horarios'] },
+      },
       required: ['topic'],
     },
   },
 ];
 
-const availabilitySchema = z.object({ date: z.string(), treatment: z.string().optional() });
+const availabilitySchema = z.object({
+  date: z.string(),
+  treatment: z.string().optional(),
+});
 const bookSchema = z.object({
   patientName: z.string(),
   treatment: z.string(),
-  dateTime: z.string(),
+  dateTime: z.string().datetime(),
 });
 const cancelSchema = z.object({ dateTime: z.string().optional() });
-const infoSchema = z.object({ topic: z.enum(['precios', 'direccion', 'horarios']) });
+const infoSchema = z.object({
+  topic: z.enum(['precios', 'direccion', 'horarios']),
+});
 
 function fmtTime(d: Date, timezone: string): string {
   return new Intl.DateTimeFormat('es-MX', {
-    timeZone: timezone, hour: '2-digit', minute: '2-digit', hour12: false,
+    timeZone: timezone,
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
   }).format(d);
 }
 
@@ -79,8 +94,11 @@ export async function executeTool(
       case 'get_availability': {
         const { date } = availabilitySchema.parse(input);
         const slots = await scheduling.getAvailability(ctx.clinic, date);
-        if (slots.length === 0) return `No hay horarios disponibles el ${date}.`;
-        const times = slots.map((s) => fmtTime(s.startsAt, ctx.clinic.timezone)).join(', ');
+        if (slots.length === 0)
+          return `No hay horarios disponibles el ${date}.`;
+        const times = slots
+          .map((s) => fmtTime(s.startsAt, ctx.clinic.timezone))
+          .join(', ');
         return `Horarios libres el ${date}: ${times}.`;
       }
       case 'book_appointment': {
@@ -91,9 +109,11 @@ export async function executeTool(
           treatment: data.treatment,
           startsAt: new Date(data.dateTime),
         });
-        if (!res.ok) return 'Ese horario ya está ocupado, ofrece otro horario al paciente.';
+        if (!res.ok)
+          return 'Ese horario ya está ocupado, ofrece otro horario al paciente.';
         return `Cita confirmada para ${data.patientName} (${data.treatment}) el ${fmtTime(
-          res.startsAt!, ctx.clinic.timezone,
+          res.startsAt!,
+          ctx.clinic.timezone,
         )}.`;
       }
       case 'cancel_appointment': {
@@ -102,11 +122,14 @@ export async function executeTool(
           phone: ctx.phone,
           startsAt: data.dateTime ? new Date(data.dateTime) : undefined,
         });
-        return res.ok ? 'Cita cancelada.' : 'No encontré una cita activa para cancelar.';
+        return res.ok
+          ? 'Cita cancelada.'
+          : 'No encontré una cita activa para cancelar.';
       }
       case 'get_clinic_info': {
         const { topic } = infoSchema.parse(input);
-        if (topic === 'precios') return `Precios: ${JSON.stringify(ctx.clinic.pricesJson)}`;
+        if (topic === 'precios')
+          return `Precios: ${JSON.stringify(ctx.clinic.pricesJson)}`;
         if (topic === 'direccion') return `Dirección: ${ctx.clinic.address}`;
         return `Horarios: ${JSON.stringify(ctx.clinic.workingHours)}`;
       }

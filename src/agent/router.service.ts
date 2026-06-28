@@ -23,7 +23,10 @@ export class RouterService {
   ) {}
 
   private creds(clinic: Clinic): WaCredentials {
-    return { phoneNumberId: clinic.waPhoneNumberId, accessToken: clinic.waAccessToken };
+    return {
+      phoneNumberId: clinic.waPhoneNumberId,
+      accessToken: clinic.waAccessToken,
+    };
   }
 
   async handle(clinic: Clinic, from: string, text: string): Promise<void> {
@@ -32,12 +35,26 @@ export class RouterService {
 
     // Botones de recordatorio
     if (normalized.startsWith('confirm_')) {
-      await this.whatsapp.sendText(creds, from, '¡Gracias! Tu cita queda confirmed ✅ Te esperamos.');
+      const id = text.trim().slice('confirm_'.length);
+      await this.scheduling.confirmAppointment(clinic, id);
+      await this.whatsapp.sendText(
+        creds,
+        from,
+        '¡Gracias! Tu cita quedó confirmada ✅ Te esperamos.',
+      );
       return;
     }
     if (normalized.startsWith('cancel_')) {
-      await this.scheduling.cancelAppointment(clinic, { phone: from });
-      await this.whatsapp.sendText(creds, from, 'Listo, cancelé tu cita. Cuando quieras agendamos otra 🙂');
+      const id = text.trim().slice('cancel_'.length);
+      await this.scheduling.cancelAppointment(clinic, {
+        phone: from,
+        appointmentId: id,
+      });
+      await this.whatsapp.sendText(
+        creds,
+        from,
+        'Listo, cancelé tu cita. Cuando quieras agendamos otra 🙂',
+      );
       return;
     }
 
