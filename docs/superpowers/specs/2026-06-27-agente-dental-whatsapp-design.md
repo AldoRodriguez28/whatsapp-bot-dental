@@ -234,3 +234,14 @@ ENCRYPTION_KEY            # cifrado de wa_access_token
 8. `whatsapp` parametrizado por credenciales de clínica + `sendList`.
 9. Tests unitarios y e2e descritos en §12.
 10. Documentar setup (DB, Google service account, cron externo) en README.
+
+## 17. Deviaciones aceptadas en Fase 1 (revisión final 2026-06-28)
+
+Decididas con el usuario tras la revisión final de la rama. Diferidas a Fase 2:
+
+- **Cifrado de `wa_access_token` (§11/§5/§14): NO implementado.** El token se guarda en texto plano en Postgres. Riesgo acotado: solo explotable con la DB comprometida (no hay fuga en runtime). Aceptable para una clínica en Fase 1; cifrar con `ENCRYPTION_KEY` antes de onboardear más clínicas en Fase 2.
+- **Lint estricto: ~120 errores `@typescript-eslint/no-unsafe-*`** por tipos `any` (payload del webhook, inputs de tools, bloques de Anthropic). Build y tests limpios; endurecer tipos como tarea de calidad en Fase 2.
+- **`SessionService` queda sin cablear** (sin flujo de booking multi-turno en memoria por ahora). Si se usa en Fase 2, indexar por `(clinicId, phone)`.
+- **Helpers de zona horaria** asumen zonas sin DST (correcto para `America/Mexico_City`); revisar para clínicas en zonas con horario de verano.
+
+Aplicado en la revisión final (commit fix): correctitud de botones confirmar/cancelar, índice único parcial anti-doble-reserva + manejo de `P2002`, validación ISO + solape al agendar, y aislamiento por cita en el envío de recordatorios.
